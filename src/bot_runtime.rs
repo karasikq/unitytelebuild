@@ -144,6 +144,8 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> Result<(), Box<dyn 
         }
 
         log::info!("Received build query for: {}", project_name);
+
+        build_runtime::unity_build(&project_name);
     }
 
     Ok(())

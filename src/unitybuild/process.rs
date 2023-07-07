@@ -17,11 +17,11 @@ pub enum LogBehaviour {
 }
 
 pub struct UnityProcess {
-    platform: Option<BuildPlatform>,
-    log_behavior: Option<LogBehaviour>,
+    pub platform: Option<BuildPlatform>,
+    pub log_behavior: Option<LogBehaviour>,
     command: Option<Command>,
-    project_path: Option<PathBuf>,
-    log_path: Option<PathBuf>,
+    pub project_path: Option<PathBuf>,
+    pub log_path: Option<PathBuf>,
 }
 
 impl UnityProcess {
