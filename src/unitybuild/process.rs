@@ -1,7 +1,7 @@
 use std::path::PathBuf;
-use std::process::Command;
-use std::process::Output;
 use std::process::Stdio;
+use tokio::process::Child;
+use tokio::process::Command;
 
 #[derive(Clone, Copy)]
 pub enum BuildPlatform {
@@ -60,7 +60,7 @@ impl UnityProcess {
         self
     }
 
-    pub fn build(&mut self) -> Result<Output, std::io::Error> {
+    pub async fn build(&mut self) -> Result<Child, std::io::Error> {
         let command = self.command.as_mut().unwrap();
         command
             .arg("-batchmode")
@@ -75,39 +75,13 @@ impl UnityProcess {
             .arg("Build.BuildActions.AndroidDevelopment")
             .arg("-buildTarget")
             .arg("android")
-            .arg("-logFile");
-
-        let log_behavior = self.log_behavior.unwrap();
-        match log_behavior {
-            LogBehaviour::Stdout => {
-                command
-                    .arg("-")
-                    .stdin(Stdio::inherit())
-                    .stdout(Stdio::inherit())
-                    .stderr(Stdio::inherit());
-            }
-            LogBehaviour::StdoutFile => {
-                command
-                    .arg("-")
-                    .stdin(Stdio::inherit())
-                    .stdout(Stdio::inherit())
-                    .stderr(Stdio::inherit());
-            }
-            LogBehaviour::File => {
-                command
-                    .arg(
-                        self.log_path
-                            .as_ref()
-                            .expect("Need to specify a log path")
-                            .to_str()
-                            .unwrap(),
-                    )
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped());
-            }
-        };
-        command.output()
+            .arg("-logFile")
+            .arg("-")
+            .kill_on_drop(true)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command.spawn()
     }
 }
 

@@ -11,7 +11,7 @@ use teloxide::{
     utils::command::BotCommands,
 };
 
-use crate::build_runtime;
+use crate::runtimes::build_runtime;
 
 #[derive(BotCommands)]
 #[command(
@@ -145,7 +145,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> Result<(), Box<dyn 
 
         log::info!("Received build query for: {}", project_name);
 
-        build_runtime::unity_build(&project_name);
+        build_runtime::unity_build(&project_name).await;
     }
 
     Ok(())

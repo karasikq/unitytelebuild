@@ -1,7 +1,7 @@
 use std::fs;
 use std::io::Write;
-use std::path::Path;
 use std::path::PathBuf;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use unitytelebuild::unitybuild::process::{BuildPlatform, LogBehaviour, UnityProcess};
 
 pub fn projects_root() -> PathBuf {
@@ -18,7 +18,7 @@ pub fn get_projects() -> Vec<PathBuf> {
         .collect::<Vec<_>>()
 }
 
-pub fn unity_build(project_name: &String) {
+pub async fn unity_build(project_name: &String) {
     let project_path = projects_root().join(project_name);
     let default_log_path = project_path
         .join(
@@ -45,27 +45,31 @@ pub fn unity_build(project_name: &String) {
         .set_platform(BuildPlatform::AndroidDevelopment)
         .set_project_path(project_path);
 
-    let output = process.build().unwrap_or_else(|_| {
-        panic!(
-            "Failed to execute Unity process. See logs at {0}",
-            default_log_path.to_str().unwrap()
-        )
-    });
-
-    println!("{}", default_log_path.to_str().unwrap());
-    println!("Process status: {}", output.status);
-    match process.log_behavior.as_ref().unwrap() {
-        LogBehaviour::Stdout => {}
-        LogBehaviour::StdoutFile => {
-            stdout_to_file(default_log_path, &output.stdout);
+    let mut output = process.build().await.unwrap();
+    let mut reader = BufReader::new(output.stdout.take().unwrap());
+    let mut line = String::new();
+    let mut file = fs::File::create(default_log_path).expect("Cannot create log file");
+    while let Ok(n) = reader.read_line(&mut line).await {
+        if n == 0 {
+            break;
         }
-        LogBehaviour::File => {
-            stdout_to_file(default_log_path, &output.stdout);
-        }
-    };
-}
+        match process.log_behavior.as_ref().unwrap() {
+            LogBehaviour::Stdout => {
+                print!("{}", line);
+            }
+            LogBehaviour::StdoutFile => {
+                print!("{}", line);
+                let _ = file.write_all(line.as_bytes());
+            }
+            LogBehaviour::File => {
+                let _ = file.write_all(line.as_bytes());
+            }
+        };
+        line.clear();
+    }
 
-fn stdout_to_file(file_path: PathBuf, stream: &[u8]) {
-    let mut file = fs::File::create(file_path).expect("Cannot create log file");
-    file.write_all(stream).unwrap();
+    println!(
+        "Process status: {}",
+        output.wait().await.unwrap().code().unwrap()
+    );
 }

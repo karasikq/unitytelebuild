@@ -1,12 +1,11 @@
-pub mod build_runtime;
-pub mod bot_runtime;
+pub mod runtimes;
 
 use std::fs::File;
 use dotenv::dotenv;
 use std::error::Error;
 use std::sync::Arc;
 use teloxide::prelude::*;
-use crate::bot_runtime::*;
+use runtimes::bot_runtime::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
