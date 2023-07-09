@@ -2,6 +2,8 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::Child;
+use tokio::signal::ctrl_c;
 use unitytelebuild::unitybuild::process::{BuildPlatform, LogBehaviour, UnityProcess};
 
 pub fn projects_root() -> PathBuf {
@@ -37,23 +39,37 @@ pub async fn unity_build(project_name: &String) {
     if log_to_stdout {
         process.set_log_behavior(LogBehaviour::StdoutFile);
     } else {
-        process
-            .set_log_behavior(LogBehaviour::File)
-            .set_log_path(default_log_path.to_str().unwrap().into());
+        process.set_log_behavior(LogBehaviour::File);
     }
     process
+        .set_log_path(default_log_path.to_str().unwrap().into())
         .set_platform(BuildPlatform::AndroidDevelopment)
         .set_project_path(project_path);
 
-    let mut output = process.build().await.unwrap();
-    let mut reader = BufReader::new(output.stdout.take().unwrap());
+    let mut child = process.build().await.unwrap();
+
+    tokio::select! {
+        _ = handle_output(process, &mut child) => { }
+        _ = ctrl_c() => {
+        
+            log::warn!("Ctrl-C received. Terminating unity process...");
+            child.kill().await.unwrap();
+            log::info!("Unity process has been terminated.");
+        }
+    }
+}
+
+async fn handle_output(unity_process: &mut UnityProcess, process: &mut Child) {
+    let stdout = process.stdout.take().expect("Failed to get stdout");
+    let mut reader = BufReader::new(stdout);
+    let mut file =
+        fs::File::create(unity_process.log_path.as_ref().unwrap()).expect("Cannot create log file");
     let mut line = String::new();
-    let mut file = fs::File::create(default_log_path).expect("Cannot create log file");
     while let Ok(n) = reader.read_line(&mut line).await {
         if n == 0 {
             break;
         }
-        match process.log_behavior.as_ref().unwrap() {
+        match unity_process.log_behavior.as_ref().unwrap() {
             LogBehaviour::Stdout => {
                 print!("{}", line);
             }
@@ -67,9 +83,8 @@ pub async fn unity_build(project_name: &String) {
         };
         line.clear();
     }
-
-    println!(
-        "Process status: {}",
-        output.wait().await.unwrap().code().unwrap()
+    log::info!(
+        "Unity process exit code: {}",
+        process.wait().await.unwrap().code().unwrap()
     );
 }
