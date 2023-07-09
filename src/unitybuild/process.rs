@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Child;
 use tokio::process::Command;
+use uuid::Uuid;
 
 #[derive(Clone, Copy)]
 pub enum BuildPlatform {
@@ -22,6 +23,7 @@ pub struct UnityProcess {
     command: Option<Command>,
     pub project_path: Option<PathBuf>,
     pub log_path: Option<PathBuf>,
+    pub uuid: Uuid,
 }
 
 impl UnityProcess {
@@ -32,6 +34,7 @@ impl UnityProcess {
             command: None,
             project_path: None,
             log_path: None,
+            uuid: Uuid::now_v1(&[1, 2, 3, 4, 5, 6]),
         }
     }
 
