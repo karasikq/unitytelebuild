@@ -12,6 +12,12 @@ pub fn projects_root() -> PathBuf {
         .into()
 }
 
+pub fn projects_root_unity() -> PathBuf {
+    dotenv::var("PROJECTS_LOCATION_UNITY")
+        .expect("Environment variable PROJECTS_LOCATION_UNITY should be set in '.env'")
+        .into()
+}
+
 pub fn get_projects() -> Vec<PathBuf> {
     fs::read_dir(projects_root())
         .expect("Cannot read PROJECTS_LOCATION directory")
@@ -22,12 +28,18 @@ pub fn get_projects() -> Vec<PathBuf> {
 
 pub async fn unity_build(project_name: &String) {
     let project_path = projects_root().join(project_name);
-    let default_log_path = project_path
+    let project_path_unity = projects_root_unity().join(project_name);
+    log::info!("{}", project_path.to_str().unwrap());
+    let log_directory = project_path
         .join(
             dotenv::var("UNITY_LOG_PATH")
                 .expect("Environment variable UNITY_LOG_PATH should be set in '.env'"),
-        )
-        .join("androind_build.log");
+        );
+
+    let _ = std::fs::create_dir_all(log_directory.to_str().unwrap());
+    let default_log_path = log_directory.join("androind_build.log");
+
+    log::info!("{}", default_log_path.to_str().unwrap());
 
     let log_to_stdout = dotenv::var("LOG_TO_STDOUT")
         .expect("Environment variable LOG_TO_STDOUT should be set in '.env'")
@@ -44,7 +56,7 @@ pub async fn unity_build(project_name: &String) {
     process
         .set_log_path(default_log_path.to_str().unwrap().into())
         .set_platform(BuildPlatform::AndroidDevelopment)
-        .set_project_path(project_path);
+        .set_project_path(project_path_unity);
 
     let mut child = process.build().await.unwrap();
 

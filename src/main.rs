@@ -6,11 +6,14 @@ use std::error::Error;
 use std::sync::Arc;
 use teloxide::prelude::*;
 use runtimes::bot_runtime::*;
+use runtimes::gdrive_runtime::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
     pretty_env_logger::init();
+    log::info!("Starting google drive auth...");
+    HubWrapper::new().await.print_file_links().await;
     log::info!("Starting unitytelebuild bot...");
 
     let config_file = File::open("config.json").expect("Failed to load 'config.json'");
