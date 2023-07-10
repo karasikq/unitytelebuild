@@ -12,10 +12,8 @@ pub fn projects_root() -> PathBuf {
         .into()
 }
 
-pub fn projects_root_unity() -> PathBuf {
+pub fn projects_root_unity() -> Result<String, dotenv::Error> {
     dotenv::var("PROJECTS_LOCATION_UNITY")
-        .expect("Environment variable PROJECTS_LOCATION_UNITY should be set in '.env'")
-        .into()
 }
 
 pub fn get_projects() -> Vec<PathBuf> {
@@ -27,14 +25,16 @@ pub fn get_projects() -> Vec<PathBuf> {
 }
 
 pub async fn unity_build(project_name: &String) {
+    let mut unity_process = UnityProcess::new();
+
     let project_path = projects_root().join(project_name);
-    let project_path_unity = projects_root_unity().join(project_name);
+    let telebuild_root = project_path.join(dotenv::var("TELEBUILD_ROOT").unwrap());
+    let process_root = telebuild_root.join(format!("{}", unity_process.uuid));
     log::info!("{}", project_path.to_str().unwrap());
-    let log_directory = project_path
-        .join(
-            dotenv::var("UNITY_LOG_PATH")
-                .expect("Environment variable UNITY_LOG_PATH should be set in '.env'"),
-        );
+    let log_directory = process_root.join(
+        dotenv::var("UNITY_LOG_PATH")
+            .expect("Environment variable UNITY_LOG_PATH should be set in '.env'"),
+    );
 
     let _ = std::fs::create_dir_all(log_directory.to_str().unwrap());
     let default_log_path = log_directory.join("androind_build.log");
@@ -46,7 +46,6 @@ pub async fn unity_build(project_name: &String) {
         .parse::<bool>()
         .unwrap();
 
-    let mut unity_process = UnityProcess::new();
     let process = unity_process.set_bin(dotenv::var("UNITY_BIN").unwrap().into());
     if log_to_stdout {
         process.set_log_behavior(LogBehaviour::StdoutFile);
@@ -54,16 +53,20 @@ pub async fn unity_build(project_name: &String) {
         process.set_log_behavior(LogBehaviour::File);
     }
     process
+        .set_env("TELEBUILD_OUTPUT_PATH", process_root.to_str().unwrap())
         .set_log_path(default_log_path.to_str().unwrap().into())
         .set_platform(BuildPlatform::AndroidDevelopment)
-        .set_project_path(project_path_unity);
+        .set_project_path(match projects_root_unity() {
+            Ok(path) => PathBuf::from(path).join(project_name),
+            Err(_) => project_path,
+        });
 
     let mut child = process.build().await.unwrap();
 
     tokio::select! {
         _ = handle_output(process, &mut child) => { }
         _ = ctrl_c() => {
-        
+
             log::warn!("Ctrl-C received. Terminating unity process...");
             child.kill().await.unwrap();
             log::info!("Unity process has been terminated.");

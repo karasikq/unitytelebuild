@@ -63,6 +63,15 @@ impl UnityProcess {
         self
     }
 
+    pub fn set_env<K, V>(&mut self, key: K, val: V) -> &mut Self
+    where
+        K: AsRef<OsStr>,
+        V: AsRef<OsStr>,
+    {
+        self.command.as_ref().unwrap().env(key.as_ref(), val.as_ref());
+        self
+    }
+
     pub async fn build(&mut self) -> Result<Child, std::io::Error> {
         let command = self.command.as_mut().unwrap();
         command
