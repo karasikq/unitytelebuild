@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Child;
@@ -68,7 +69,7 @@ impl UnityProcess {
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
     {
-        self.command.as_ref().unwrap().env(key.as_ref(), val.as_ref());
+        self.command.as_mut().unwrap().env(key.as_ref(), val.as_ref());
         self
     }
 

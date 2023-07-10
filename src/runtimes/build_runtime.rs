@@ -28,9 +28,10 @@ pub async fn unity_build(project_name: &String) {
     let mut unity_process = UnityProcess::new();
 
     let project_path = projects_root().join(project_name);
-    let telebuild_root = project_path.join(dotenv::var("TELEBUILD_ROOT").unwrap());
-    let process_root = telebuild_root.join(format!("{}", unity_process.uuid));
-    log::info!("{}", project_path.to_str().unwrap());
+    let telebuild_root = PathBuf::from(dotenv::var("TELEBUILD_ROOT").unwrap())
+        .join(format!("{}", unity_process.uuid));
+    let process_root = project_path
+        .join(telebuild_root.clone());
     let log_directory = process_root.join(
         dotenv::var("UNITY_LOG_PATH")
             .expect("Environment variable UNITY_LOG_PATH should be set in '.env'"),
@@ -53,7 +54,7 @@ pub async fn unity_build(project_name: &String) {
         process.set_log_behavior(LogBehaviour::File);
     }
     process
-        .set_env("TELEBUILD_OUTPUT_PATH", process_root.to_str().unwrap())
+        .set_env("TELEBUILD_OUTPUT_PATH", telebuild_root.to_str().unwrap())
         .set_log_path(default_log_path.to_str().unwrap().into())
         .set_platform(BuildPlatform::AndroidDevelopment)
         .set_project_path(match projects_root_unity() {
