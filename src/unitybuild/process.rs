@@ -1,11 +1,13 @@
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::process::Child;
 use tokio::process::Command;
 use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum BuildPlatform {
     AndroidDevelopment,
     AndroidRelease,
@@ -21,10 +23,16 @@ pub enum LogBehaviour {
 pub struct UnityProcess {
     pub platform: Option<BuildPlatform>,
     pub log_behavior: Option<LogBehaviour>,
-    command: Option<Command>,
     pub project_path: Option<PathBuf>,
-    pub log_path: Option<PathBuf>,
+    pub bin_path: Option<PathBuf>,
     pub uuid: Uuid,
+    envs: HashMap<String, String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct UnityOutput {
+    pub build_path: String,
+    pub platform: BuildPlatform,
 }
 
 impl UnityProcess {
@@ -32,15 +40,15 @@ impl UnityProcess {
         UnityProcess {
             platform: None,
             log_behavior: None,
-            command: None,
             project_path: None,
-            log_path: None,
             uuid: Uuid::now_v1(&[1, 2, 3, 4, 5, 6]),
+            envs: HashMap::new(),
+            bin_path: None,
         }
     }
 
     pub fn set_bin(&mut self, path: PathBuf) -> &mut Self {
-        self.command = Some(Command::new(path));
+        self.bin_path = Some(path);
         self
     }
 
@@ -59,22 +67,21 @@ impl UnityProcess {
         self
     }
 
-    pub fn set_log_path(&mut self, log_path: PathBuf) -> &mut Self {
-        self.log_path = Some(log_path);
-        self
-    }
-
     pub fn set_env<K, V>(&mut self, key: K, val: V) -> &mut Self
     where
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
     {
-        self.command.as_mut().unwrap().env(key.as_ref(), val.as_ref());
+        self.envs.insert(
+            key.as_ref().to_string_lossy().into_owned(),
+            val.as_ref().to_string_lossy().into_owned(),
+        );
         self
     }
 
     pub async fn build(&mut self) -> Result<Child, std::io::Error> {
-        let command = self.command.as_mut().unwrap();
+        let mut command = Command::new(self.bin_path.as_ref().unwrap());
+        command.envs(&self.envs);
         command
             .arg("-batchmode")
             .arg("-quit")
@@ -85,7 +92,7 @@ impl UnityProcess {
                     .expect("Need to specify a project path"),
             )
             .arg("-executeMethod")
-            .arg("Build.BuildActions.AndroidDevelopment")
+            .arg("Builds.BuildSystem.AndroidDevelopment")
             .arg("-buildTarget")
             .arg("android")
             .arg("-logFile")

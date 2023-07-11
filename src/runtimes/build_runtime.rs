@@ -16,6 +16,20 @@ pub fn projects_root_unity() -> Result<String, dotenv::Error> {
     dotenv::var("PROJECTS_LOCATION_UNITY")
 }
 
+pub fn log_path() -> String {
+    dotenv::var("UNITY_LOG_PATH")
+        .expect("Environment variable UNITY_LOG_PATH should be set in '.env'")
+}
+
+pub fn build_path(platform: &BuildPlatform) -> String {
+    match platform {
+        BuildPlatform::AndroidDevelopment => dotenv::var("UNITY_ANDROID_BUILD_PATH_DEV")
+            .expect("Environment variable UNITY_ANDROID_BUILD_PATH_DEV should be set in '.env'"),
+        BuildPlatform::AndroidRelease => dotenv::var("UNITY_ANDROID_BUILD_PATH_REL")
+            .expect("Environment variable UNITY_ANDROID_BUILD_PATH_REL should be set in '.env'"),
+    }
+}
+
 pub fn get_projects() -> Vec<PathBuf> {
     fs::read_dir(projects_root())
         .expect("Cannot read PROJECTS_LOCATION directory")
@@ -30,12 +44,8 @@ pub async fn unity_build(project_name: &String) {
     let project_path = projects_root().join(project_name);
     let telebuild_root = PathBuf::from(dotenv::var("TELEBUILD_ROOT").unwrap())
         .join(format!("{}", unity_process.uuid));
-    let process_root = project_path
-        .join(telebuild_root.clone());
-    let log_directory = process_root.join(
-        dotenv::var("UNITY_LOG_PATH")
-            .expect("Environment variable UNITY_LOG_PATH should be set in '.env'"),
-    );
+    let process_root = project_path.join(telebuild_root.clone());
+    let log_directory = process_root.join(log_path());
 
     let _ = std::fs::create_dir_all(log_directory.to_str().unwrap());
     let default_log_path = log_directory.join("androind_build.log");
@@ -53,19 +63,23 @@ pub async fn unity_build(project_name: &String) {
     } else {
         process.set_log_behavior(LogBehaviour::File);
     }
+    
     process
-        .set_env("TELEBUILD_OUTPUT_PATH", telebuild_root.to_str().unwrap())
-        .set_log_path(default_log_path.to_str().unwrap().into())
         .set_platform(BuildPlatform::AndroidDevelopment)
         .set_project_path(match projects_root_unity() {
             Ok(path) => PathBuf::from(path).join(project_name),
             Err(_) => project_path,
         });
+    let platform = *process.platform.as_ref().unwrap();
+    process
+        .set_env("TELEBUILD_BUILD_ROOT", telebuild_root.to_str().unwrap())
+        .set_env("UNITY_ANDROID_BUILD_PATH", build_path(&platform))
+        .set_env("KEYSTORE_PASSWORD", dotenv::var("KEYSTORE_PASSWORD").unwrap());
 
     let mut child = process.build().await.unwrap();
 
     tokio::select! {
-        _ = handle_output(process, &mut child) => { }
+        _ = handle_output(&default_log_path, process, &mut child) => { }
         _ = ctrl_c() => {
 
             log::warn!("Ctrl-C received. Terminating unity process...");
@@ -75,11 +89,10 @@ pub async fn unity_build(project_name: &String) {
     }
 }
 
-async fn handle_output(unity_process: &mut UnityProcess, process: &mut Child) {
+async fn handle_output(log_path: &PathBuf, unity_process: &mut UnityProcess, process: &mut Child) {
     let stdout = process.stdout.take().expect("Failed to get stdout");
     let mut reader = BufReader::new(stdout);
-    let mut file =
-        fs::File::create(unity_process.log_path.as_ref().unwrap()).expect("Cannot create log file");
+    let mut file = fs::File::create(log_path).expect("Cannot create log file");
     let mut line = String::new();
     while let Ok(n) = reader.read_line(&mut line).await {
         if n == 0 {
