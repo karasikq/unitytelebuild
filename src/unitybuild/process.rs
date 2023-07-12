@@ -26,6 +26,7 @@ pub struct UnityProcess {
     pub project_path: Option<PathBuf>,
     pub bin_path: Option<PathBuf>,
     pub uuid: Uuid,
+    script_build_entry: Option<String>,
     telebuild_root: Option<PathBuf>,
     envs: HashMap<String, String>,
 }
@@ -42,10 +43,11 @@ impl UnityProcess {
             platform: None,
             log_behavior: None,
             project_path: None,
-            uuid: Uuid::now_v1(&[1, 2, 3, 4, 5, 6]),
-            envs: HashMap::new(),
             bin_path: None,
+            uuid: Uuid::now_v1(&[1, 2, 3, 4, 5, 6]),
+            script_build_entry: None,
             telebuild_root: None,
+            envs: HashMap::new(),
         }
     }
 
@@ -66,6 +68,11 @@ impl UnityProcess {
 
     pub fn set_project_path(&mut self, project_path: PathBuf) -> &mut Self {
         self.project_path = Some(project_path);
+        self
+    }
+
+    pub fn set_build_entry(&mut self, function_full_name: String) -> &mut Self {
+        self.script_build_entry = Some(function_full_name);
         self
     }
 
@@ -99,7 +106,11 @@ impl UnityProcess {
                     .expect("Need to specify a project path"),
             )
             .arg("-executeMethod")
-            .arg("Builds.BuildSystem.Build")
+            .arg(
+                self.script_build_entry
+                    .as_ref()
+                    .expect("Need to specify build entry function"),
+            )
             .arg("-buildTarget")
             .arg("android")
             .arg("-logFile")

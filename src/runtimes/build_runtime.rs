@@ -1,7 +1,7 @@
-use std::path::Path;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
+use std::path::Path;
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
@@ -83,7 +83,8 @@ pub async fn unity_build(project_name: &String) {
             Ok(path) => PathBuf::from(path).join(project_name),
             Err(_) => project_path,
         })
-        .set_telebuild_root(telebuild_root);
+        .set_telebuild_root(telebuild_root)
+        .set_build_entry(dotenv::var("BUILD_ENTRY").unwrap());
     let platform = *process.platform.as_ref().unwrap();
     let settings = BuildSettings {
         platform,
