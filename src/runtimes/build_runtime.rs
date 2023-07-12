@@ -1,3 +1,5 @@
+use std::path::Path;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -5,6 +7,13 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 use tokio::signal::ctrl_c;
 use unitytelebuild::unitybuild::process::{BuildPlatform, LogBehaviour, UnityProcess};
+
+#[derive(Clone, Serialize, Deserialize)]
+struct BuildSettings {
+    platform: BuildPlatform,
+    keystore_password: String,
+    build_path: String,
+}
 
 pub fn projects_root() -> PathBuf {
     dotenv::var("PROJECTS_LOCATION")
@@ -44,6 +53,10 @@ pub async fn unity_build(project_name: &String) {
     let project_path = projects_root().join(project_name);
     let telebuild_root = PathBuf::from(dotenv::var("TELEBUILD_ROOT").unwrap())
         .join(format!("{}", unity_process.uuid));
+    println!(
+        "Telebuild project root: {}",
+        telebuild_root.to_str().unwrap()
+    );
     let process_root = project_path.join(telebuild_root.clone());
     let log_directory = process_root.join(log_path());
 
@@ -63,18 +76,21 @@ pub async fn unity_build(project_name: &String) {
     } else {
         process.set_log_behavior(LogBehaviour::File);
     }
-    
+
     process
         .set_platform(BuildPlatform::AndroidDevelopment)
         .set_project_path(match projects_root_unity() {
             Ok(path) => PathBuf::from(path).join(project_name),
             Err(_) => project_path,
-        });
+        })
+        .set_telebuild_root(telebuild_root);
     let platform = *process.platform.as_ref().unwrap();
-    process
-        .set_env("TELEBUILD_BUILD_ROOT", telebuild_root.to_str().unwrap())
-        .set_env("UNITY_ANDROID_BUILD_PATH", build_path(&platform))
-        .set_env("KEYSTORE_PASSWORD", dotenv::var("KEYSTORE_PASSWORD").unwrap());
+    let settings = BuildSettings {
+        platform,
+        keystore_password: dotenv::var("KEYSTORE_PASSWORD").unwrap(),
+        build_path: build_path(&platform),
+    };
+    create_build_settings(&process_root, &settings);
 
     let mut child = process.build().await.unwrap();
 
@@ -87,6 +103,12 @@ pub async fn unity_build(project_name: &String) {
             log::info!("Unity process has been terminated.");
         }
     }
+}
+
+fn create_build_settings(root: &Path, settings: &BuildSettings) {
+    let file_path = root.join("settings.json");
+    let mut file = fs::File::create(file_path).expect("Cannot create 'settings.json' file");
+    let _ = file.write_all(serde_json::to_string(settings).unwrap().as_bytes());
 }
 
 async fn handle_output(log_path: &PathBuf, unity_process: &mut UnityProcess, process: &mut Child) {

@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
@@ -5,7 +6,6 @@ use std::process::Stdio;
 use tokio::process::Child;
 use tokio::process::Command;
 use uuid::Uuid;
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum BuildPlatform {
@@ -26,6 +26,7 @@ pub struct UnityProcess {
     pub project_path: Option<PathBuf>,
     pub bin_path: Option<PathBuf>,
     pub uuid: Uuid,
+    telebuild_root: Option<PathBuf>,
     envs: HashMap<String, String>,
 }
 
@@ -44,6 +45,7 @@ impl UnityProcess {
             uuid: Uuid::now_v1(&[1, 2, 3, 4, 5, 6]),
             envs: HashMap::new(),
             bin_path: None,
+            telebuild_root: None,
         }
     }
 
@@ -64,6 +66,11 @@ impl UnityProcess {
 
     pub fn set_project_path(&mut self, project_path: PathBuf) -> &mut Self {
         self.project_path = Some(project_path);
+        self
+    }
+
+    pub fn set_telebuild_root(&mut self, telebuild_root: PathBuf) -> &mut Self {
+        self.telebuild_root = Some(telebuild_root);
         self
     }
 
@@ -92,11 +99,17 @@ impl UnityProcess {
                     .expect("Need to specify a project path"),
             )
             .arg("-executeMethod")
-            .arg("Builds.BuildSystem.AndroidDevelopment")
+            .arg("Builds.BuildSystem.Build")
             .arg("-buildTarget")
             .arg("android")
             .arg("-logFile")
             .arg("-")
+            .arg("-teleroot")
+            .arg(
+                self.telebuild_root
+                    .as_ref()
+                    .expect("Need to specify a telebuild root"),
+            )
             .kill_on_drop(true)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
