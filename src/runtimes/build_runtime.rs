@@ -1,19 +1,11 @@
-use serde::{Deserialize, Serialize};
+use std::error::Error;
 use std::fs;
 use std::io::Write;
-use std::path::Path;
 use std::path::PathBuf;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Child;
 use tokio::signal::ctrl_c;
-use unitytelebuild::unitybuild::process::{BuildPlatform, LogBehaviour, UnityProcess};
-
-#[derive(Clone, Serialize, Deserialize)]
-struct BuildSettings {
-    platform: BuildPlatform,
-    keystore_password: String,
-    build_path: String,
-}
+use unitytelebuild::unitybuild::process::{BuildPlatform, LogBehaviour, UnityOutput, UnityProcess};
 
 pub fn projects_root() -> PathBuf {
     dotenv::var("PROJECTS_LOCATION")
@@ -30,15 +22,6 @@ pub fn log_path() -> String {
         .expect("Environment variable UNITY_LOG_PATH should be set in '.env'")
 }
 
-pub fn build_path(platform: &BuildPlatform) -> String {
-    match platform {
-        BuildPlatform::AndroidDevelopment => dotenv::var("UNITY_ANDROID_BUILD_PATH_DEV")
-            .expect("Environment variable UNITY_ANDROID_BUILD_PATH_DEV should be set in '.env'"),
-        BuildPlatform::AndroidRelease => dotenv::var("UNITY_ANDROID_BUILD_PATH_REL")
-            .expect("Environment variable UNITY_ANDROID_BUILD_PATH_REL should be set in '.env'"),
-    }
-}
-
 pub fn get_projects() -> Vec<PathBuf> {
     fs::read_dir(projects_root())
         .expect("Cannot read PROJECTS_LOCATION directory")
@@ -47,7 +30,7 @@ pub fn get_projects() -> Vec<PathBuf> {
         .collect::<Vec<_>>()
 }
 
-pub async fn unity_build(project_name: &String) {
+pub async fn unity_build(project_name: &String) -> Result<UnityOutput, Box<dyn Error + Send + Sync>> {
     let mut unity_process = UnityProcess::new();
 
     let project_path = projects_root().join(project_name);
@@ -61,7 +44,7 @@ pub async fn unity_build(project_name: &String) {
     let log_directory = process_root.join(log_path());
 
     let _ = std::fs::create_dir_all(log_directory.to_str().unwrap());
-    let default_log_path = log_directory.join("androind_build.log");
+    let default_log_path = log_directory.join("android_build.log");
 
     log::info!("{}", default_log_path.to_str().unwrap());
 
@@ -78,41 +61,34 @@ pub async fn unity_build(project_name: &String) {
     }
 
     process
-        .set_platform(BuildPlatform::AndroidDevelopment)
-        .set_project_path(match projects_root_unity() {
+        .set_project_path(project_path.clone())
+        .set_project_path_unity(match projects_root_unity() {
             Ok(path) => PathBuf::from(path).join(project_name),
             Err(_) => project_path,
         })
+        .set_platform(BuildPlatform::AndroidDevelopment)
         .set_telebuild_root(telebuild_root)
-        .set_build_entry(dotenv::var("BUILD_ENTRY").unwrap());
-    let platform = *process.platform.as_ref().unwrap();
-    let settings = BuildSettings {
-        platform,
-        keystore_password: dotenv::var("KEYSTORE_PASSWORD").unwrap(),
-        build_path: build_path(&platform),
-    };
-    create_build_settings(&process_root, &settings);
+        .set_build_entry(dotenv::var("BUILD_ENTRY").unwrap())
+        .set_keystore_password(dotenv::var("KEYSTORE_PASSWORD").unwrap())
+        .create_build_settings();
 
     let mut child = process.build().await.unwrap();
 
     tokio::select! {
-        _ = handle_output(&default_log_path, process, &mut child) => { }
+        result = handle_output(&default_log_path, process, &mut child) => { result }
         _ = ctrl_c() => {
-
-            log::warn!("Ctrl-C received. Terminating unity process...");
             child.kill().await.unwrap();
             log::info!("Unity process has been terminated.");
+            Err("Ctrl-C received. Terminating unity process...")?
         }
     }
 }
 
-fn create_build_settings(root: &Path, settings: &BuildSettings) {
-    let file_path = root.join("settings.json");
-    let mut file = fs::File::create(file_path).expect("Cannot create 'settings.json' file");
-    let _ = file.write_all(serde_json::to_string(settings).unwrap().as_bytes());
-}
-
-async fn handle_output(log_path: &PathBuf, unity_process: &mut UnityProcess, process: &mut Child) {
+async fn handle_output(
+    log_path: &PathBuf,
+    unity_process: &mut UnityProcess,
+    process: &mut Child,
+) -> Result<UnityOutput, Box<dyn Error + Send + Sync>> {
     let stdout = process.stdout.take().expect("Failed to get stdout");
     let mut reader = BufReader::new(stdout);
     let mut file = fs::File::create(log_path).expect("Cannot create log file");
@@ -135,8 +111,12 @@ async fn handle_output(log_path: &PathBuf, unity_process: &mut UnityProcess, pro
         };
         line.clear();
     }
+    let result = process.wait().await.unwrap();
     log::info!(
         "Unity process exit code: {}",
-        process.wait().await.unwrap().code().unwrap()
+        result.code().unwrap()
     );
+    let mut output = unity_process.load_output().unwrap();
+    output.log_path = Some(log_path.clone().into_os_string().into_string().unwrap());
+    Ok(output)
 }

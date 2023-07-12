@@ -5,8 +5,8 @@ use teloxide::{
     payloads::SendMessageSetters,
     prelude::*,
     types::{
-        InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputMessageContent,
-        InputMessageContentText, Me,
+        InlineKeyboardButton, InlineKeyboardMarkup, InlineQueryResultArticle, InputFile,
+        InputMessageContent, InputMessageContentText, Me,
     },
     utils::command::BotCommands,
 };
@@ -131,21 +131,32 @@ pub async fn inline_query_handler(
     Ok(())
 }
 
-pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn callback_handler(
+    bot: Bot,
+    q: CallbackQuery,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(project_name) = q.data {
         let text = format!("Project to build: {project_name}");
 
         bot.answer_callback_query(q.id).await?;
 
-        if let Some(Message { id, chat, .. }) = q.message {
-            bot.edit_message_text(chat.id, id, text).await?;
-        } else if let Some(id) = q.inline_message_id {
-            bot.edit_message_text_inline(id, text).await?;
-        }
+        let message = q.message.unwrap();
+        bot.edit_message_text(message.chat.id, message.id, text)
+            .await?;
 
         log::info!("Received build query for: {}", project_name);
 
-        build_runtime::unity_build(&project_name).await;
+        match build_runtime::unity_build(&project_name).await {
+            Ok(output) => {
+                let mut doc =
+                    bot.send_document(message.chat.id, InputFile::file(output.log_path.unwrap()));
+                doc.caption = Some("Build complete successfully".to_owned());
+                doc.await?;
+            }
+            Err(_) => {
+                bot.send_message(message.chat.id, "Build failed").await?;
+            }
+        };
     }
 
     Ok(())
