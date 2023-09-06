@@ -12,6 +12,7 @@ use teloxide::{
 };
 
 use crate::runtimes::build_runtime;
+use crate::runtimes::gdrive_runtime::HubWrapper;
 
 #[derive(BotCommands)]
 #[command(
@@ -134,6 +135,7 @@ pub async fn inline_query_handler(
 pub async fn callback_handler(
     bot: Bot,
     q: CallbackQuery,
+    gdrive: Arc<HubWrapper>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(project_name) = q.data {
         let text = format!("Project to build: {project_name}");
@@ -146,18 +148,37 @@ pub async fn callback_handler(
 
         log::info!("Received build query for: {}", project_name);
 
-        match build_runtime::unity_build(&project_name).await {
-            Ok(output) => {
-                let mut doc =
-                    bot.send_document(message.chat.id, InputFile::file(output.log_path.unwrap()));
-                doc.caption = Some("Build complete successfully".to_owned());
-                doc.await?;
-            }
-            Err(_) => {
-                bot.send_message(message.chat.id, "Build failed").await?;
-            }
-        };
+        tokio::spawn(
+            async move { wait_for_build(bot, message.chat.id, gdrive, project_name).await },
+        );
     }
 
+    Ok(())
+}
+
+pub async fn wait_for_build(
+    bot: Bot,
+    id: ChatId,
+    gdrive: Arc<HubWrapper>,
+    project_name: String,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    match build_runtime::unity_build(&project_name).await {
+        Ok(output) => {
+            let mut doc = bot.send_document(id, InputFile::file(output.log_path.unwrap()));
+            doc.caption = Some("Build complete successfully".to_owned());
+            doc.await?;
+            match gdrive.upload_file(output.build_path).await {
+                Ok(file) => {
+                    if let Some(build_download_url) = file.web_content_link {
+                        bot.send_message(id, build_download_url).await?;
+                    }
+                }
+                Err(e) => println!("{e}"),
+            }
+        }
+        Err(_) => {
+            bot.send_message(id, "Build failed").await?;
+        }
+    };
     Ok(())
 }

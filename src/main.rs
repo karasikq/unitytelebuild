@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     dotenv().ok();
     pretty_env_logger::init();
     log::info!("Starting google drive auth...");
-    HubWrapper::new().await;
+    let gdrive = HubWrapper::new().await.unwrap();
     log::info!("Starting unitytelebuild bot...");
 
     let config_file = File::open("config.json").expect("Failed to load 'config.json'");
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .branch(Update::filter_inline_query().endpoint(inline_query_handler));
 
     Dispatcher::builder(bot, handler)
-        .dependencies(dptree::deps![Arc::new(config)])
+        .dependencies(dptree::deps![Arc::new(gdrive), Arc::new(config)])
         .enable_ctrlc_handler()
         .build()
         .dispatch()

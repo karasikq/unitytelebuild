@@ -30,7 +30,9 @@ pub fn get_projects() -> Vec<PathBuf> {
         .collect::<Vec<_>>()
 }
 
-pub async fn unity_build(project_name: &String) -> Result<UnityOutput, Box<dyn Error + Send + Sync>> {
+pub async fn unity_build(
+    project_name: &String,
+) -> Result<UnityOutput, Box<dyn Error + Send + Sync>> {
     let mut unity_process = UnityProcess::new();
 
     let project_path = projects_root().join(project_name);
@@ -112,11 +114,15 @@ async fn handle_output(
         line.clear();
     }
     let result = process.wait().await.unwrap();
-    log::info!(
-        "Unity process exit code: {}",
-        result.code().unwrap()
-    );
+    log::info!("Unity process exit code: {}", result.code().unwrap());
     let mut output = unity_process.load_output().unwrap();
+    let proj_path = PathBuf::from(unity_process.project_path.as_ref().unwrap())
+        .join(output.build_path)
+        .into_os_string()
+        .into_string()
+        .unwrap();
+    println!("{proj_path}");
+    output.build_path = proj_path;
     output.log_path = Some(log_path.clone().into_os_string().into_string().unwrap());
     Ok(output)
 }
