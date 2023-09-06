@@ -15,3 +15,5 @@ Cargo.lock
 
 .env
 config.json
+client_secrets.json
+tokencache.json
